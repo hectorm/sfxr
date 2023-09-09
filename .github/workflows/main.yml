@@ -1,0 +1,59 @@
+name: 'Main'
+
+on:
+  push:
+    tags: ['*']
+    branches: ['*']
+  pull_request:
+    branches: ['*']
+  schedule:
+    - cron: '20 04 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+
+  build:
+    name: 'Build'
+    runs-on: 'ubuntu-latest'
+    permissions:
+      contents: 'read'
+    container:
+      image: 'docker.io/hectorm/wasm:latest'
+      options: '--user 0:0'
+    steps:
+      - name: 'Checkout'
+        uses: 'actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac'
+      - name: 'Build'
+        working-directory: './sfxr/'
+        run: |
+          emmake make clean all
+          mkdir ../dist/
+          install -m644 ./sfxr.html ../dist/index.html
+          install -m644 ./sfxr.js ../dist/sfxr.js
+          install -m644 ./sfxr.wasm ../dist/sfxr.wasm
+          install -m644 ./sfxr.data ../dist/sfxr.data
+          install -m644 ./sfxr.png ../dist/sfxr.png
+      - name: 'Upload artifacts'
+        if: "startsWith(github.ref, 'refs/tags/v')"
+        uses: 'actions/upload-pages-artifact@a753861a5debcf57bf8b404356158c8e1e33150c'
+        with:
+          path: './dist/'
+          retention-days: 1
+
+  publish-github-pages:
+    name: 'GitHub Pages publish'
+    if: "startsWith(github.ref, 'refs/tags/v')"
+    needs: ['build']
+    runs-on: 'ubuntu-latest'
+    permissions:
+      id-token: 'write'
+      pages: 'write'
+    environment:
+      name: 'github-pages'
+      url: '${{ steps.deployment.outputs.page_url }}'
+    steps:
+      - name: 'Publish'
+        id: 'deployment'
+        uses: 'actions/deploy-pages@9dbe3824824f8a1377b8e298bafde1a50ede43e5'

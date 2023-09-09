@@ -1,11 +1,16 @@
 #ifndef SDLKIT_H
 #define SDLKIT_H
 
-#include "SDL.h"
-#define ERROR(x) error(__FILE__, __LINE__, #x)
-#define VERIFY(x) do { if (!(x)) ERROR(x); } while (0)
+#include <SDL.h>
+#include <set>
 #include <stdio.h>
 #include <string.h>
+#ifdef __EMSCRIPTEN__
+#include <emscripten.h>
+#endif
+
+#define ERROR(x) error(__FILE__, __LINE__, #x)
+#define VERIFY(x) do { if (!(x)) ERROR(x); } while (0)
 
 static void error(const char *file, unsigned int line, const char *msg) {
   fprintf(stderr, "[!] %s:%u  %s\n", file, line, msg);
@@ -24,7 +29,7 @@ typedef Uint16 WORD;
 
 #define Sleep(x) SDL_Delay(x)
 
-static bool keys[SDLK_LAST];
+std::set<unsigned int> keys;
 
 void ddkInit();      // Will be called on startup
 bool ddkCalcFrame(); // Will be called every frame, return true to continue running or false to quit
@@ -36,9 +41,14 @@ public:
   ~DPInput() {}
   static void Update() {}
 
-  static bool KeyPressed(SDLKey key) {
-    bool r = keys[key];
-    keys[key] = false;
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+  static bool KeyPressed(SDL_Keycode key)
+#else
+  static bool KeyPressed(SDLKey key)
+#endif
+  {
+    bool r = (keys.find(key) != keys.end());
+    keys.erase(key);
     return r;
   }
 };
@@ -51,6 +61,22 @@ static bool mouse_left = false, mouse_right = false, mouse_middle = false;
 static bool mouse_leftclick = false, mouse_rightclick = false, mouse_middleclick = false;
 
 static SDL_Surface *sdlscreen = nullptr;
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+static SDL_Window *sdlwindow = nullptr;
+static SDL_Renderer *sdlrenderer = nullptr;
+static SDL_Texture *sdltexture = nullptr;
+#endif
+
+static void sdlflip() {
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+  SDL_UpdateTexture(sdltexture, nullptr, sdlscreen->pixels, sdlscreen->pitch);
+  SDL_RenderClear(sdlrenderer);
+  SDL_RenderCopy(sdlrenderer, sdltexture, nullptr, nullptr);
+  SDL_RenderPresent(sdlrenderer);
+#else
+  SDL_Flip(sdlscreen);
+#endif
+}
 
 static void sdlupdate() {
   mouse_px = mouse_x;
@@ -72,154 +98,237 @@ static bool ddkLock() {
   ddkpitch = sdlscreen->pitch / (sdlscreen->format->BitsPerPixel == 32 ? 4 : 2);
   ddkscreen16 = (Uint16 *)(sdlscreen->pixels);
   ddkscreen32 = (Uint32 *)(sdlscreen->pixels);
+  return true;
 }
 
 static void ddkUnlock() {
   SDL_UnlockSurface(sdlscreen);
 }
 
-static void ddkSetMode(int width, int height, int bpp, int refreshrate, int fullscreen, const char *title) {
+static void ddkSetMode(int width, int height, int bpp, int /* refreshrate */, int fullscreen, const char *title) {
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+  VERIFY(sdlscreen = SDL_CreateRGBSurface(0, width, height, bpp, 0x00FF0000, 0x0000FF00, 0x000000FF, 0xFF000000));
+  VERIFY(sdlwindow = SDL_CreateWindow(title, SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, width, height, fullscreen ? SDL_WINDOW_FULLSCREEN : 0));
+  VERIFY(sdlrenderer = SDL_CreateRenderer(sdlwindow, -1, SDL_RENDERER_ACCELERATED | SDL_RENDERER_PRESENTVSYNC));
+  VERIFY(sdltexture = SDL_CreateTexture(sdlrenderer, SDL_PIXELFORMAT_RGB888, SDL_TEXTUREACCESS_STREAMING, width, height));
+#else
   VERIFY(sdlscreen = SDL_SetVideoMode(width, height, bpp, fullscreen ? SDL_FULLSCREEN : 0));
-  SDL_WM_SetCaption(title, title);
+  SDL_WM_SetCaption(title, nullptr);
+#endif
 }
+
+static Uint32 RGBA(int r, int g, int b, int a) {
+  return SDL_MapRGBA(sdlscreen->format, r, g, b, a);
+}
+
+using FileSelectorHandler = void (*)(const char *path);
+static FileSelectorHandler FileSelectorCallback;
+
+#ifdef HAVE_GTK
 
 #include <gtk/gtk.h>
-#include <malloc.h>
-#include <string.h>
 
-#if GTK_CHECK_VERSION(3, 0, 0)
+#if GTK_CHECK_VERSION(4, 10, 0)
 
-static bool load_file(char *fname) {
-  char *fn;
+static void FileSelectorLoad(FileSelectorHandler callback) {
+  FileSelectorCallback = callback;
 
-  GtkWidget *dialog = gtk_file_chooser_dialog_new("Load a file!",
-                                                  nullptr,
-                                                  GTK_FILE_CHOOSER_ACTION_OPEN,
-                                                  GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
-                                                  GTK_STOCK_OPEN, GTK_RESPONSE_ACCEPT,
-                                                  nullptr);
+  GtkFileDialog *dialog = gtk_file_dialog_new();
 
-  if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-    fn = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-    strncpy(fname, fn, 255);
-    g_free(fn);
+  gtk_file_dialog_open(
+      dialog, nullptr, nullptr,
+      +[](GObject *source, GAsyncResult *result, gpointer) {
+        GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
 
-    fname[255] = 0;
+        GFile *file = gtk_file_dialog_open_finish(dialog, result, nullptr);
+        if (!file)
+          return;
+
+        char *path = g_file_get_path(file);
+        FileSelectorCallback(path);
+
+        g_free(path);
+        g_object_unref(file);
+      },
+      nullptr);
+
+  g_object_unref(dialog);
+
+  while (g_list_model_get_n_items(gtk_window_get_toplevels()) > 0)
+    g_main_context_iteration(nullptr, true);
+}
+
+static void FileSelectorSave(FileSelectorHandler callback) {
+  FileSelectorCallback = callback;
+
+  GtkFileDialog *dialog = gtk_file_dialog_new();
+
+  gtk_file_dialog_save(
+      dialog, nullptr, nullptr,
+      +[](GObject *source, GAsyncResult *result, gpointer) {
+        GtkFileDialog *dialog = GTK_FILE_DIALOG(source);
+
+        GFile *file = gtk_file_dialog_save_finish(dialog, result, nullptr);
+        if (!file)
+          return;
+
+        char *path = g_file_get_path(file);
+        FileSelectorCallback(path);
+
+        g_free(path);
+        g_object_unref(file);
+      },
+      nullptr);
+
+  g_object_unref(dialog);
+
+  while (g_list_model_get_n_items(gtk_window_get_toplevels()) > 0)
+    g_main_context_iteration(nullptr, true);
+}
+
+#elif GTK_CHECK_VERSION(3, 0, 0)
+
+static void FileSelectorLoad(FileSelectorHandler callback) {
+  FileSelectorCallback = callback;
+
+  GtkFileChooserNative *native = gtk_file_chooser_native_new("Load file",
+                                                             nullptr,
+                                                             GTK_FILE_CHOOSER_ACTION_OPEN,
+                                                             "_Load",
+                                                             "_Cancel");
+
+  gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(native), true);
+
+  if (gtk_native_dialog_run(GTK_NATIVE_DIALOG(native)) == GTK_RESPONSE_ACCEPT) {
+    char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native));
+    FileSelectorCallback(path);
+
+    g_free(path);
   }
 
-  gtk_widget_destroy(dialog);
+  gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(native));
+  g_object_unref(native);
 
   while (gtk_events_pending())
     gtk_main_iteration();
-
-  return true;
 }
 
-static bool save_file(char *fname) {
-  char *fn;
+static void FileSelectorSave(FileSelectorHandler callback) {
+  FileSelectorCallback = callback;
 
-  GtkWidget *dialog = gtk_file_chooser_dialog_new("Save a file!",
-                                                  nullptr,
-                                                  GTK_FILE_CHOOSER_ACTION_SAVE,
-                                                  GTK_STOCK_CANCEL, GTK_RESPONSE_CANCEL,
-                                                  GTK_STOCK_SAVE, GTK_RESPONSE_ACCEPT,
-                                                  nullptr);
+  GtkFileChooserNative *native = gtk_file_chooser_native_new("Save file",
+                                                             nullptr,
+                                                             GTK_FILE_CHOOSER_ACTION_SAVE,
+                                                             "_Save",
+                                                             "_Cancel");
 
-  gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(dialog), TRUE);
+  gtk_native_dialog_set_modal(GTK_NATIVE_DIALOG(native), true);
+  gtk_file_chooser_set_do_overwrite_confirmation(GTK_FILE_CHOOSER(native), true);
 
-  if (gtk_dialog_run(GTK_DIALOG(dialog)) == GTK_RESPONSE_ACCEPT) {
-    fn = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(dialog));
-    strncpy(fname, fn, 255);
-    g_free(fn);
+  if (gtk_native_dialog_run(GTK_NATIVE_DIALOG(native)) == GTK_RESPONSE_ACCEPT) {
+    char *path = gtk_file_chooser_get_filename(GTK_FILE_CHOOSER(native));
+    FileSelectorCallback(path);
 
-    fname[255] = 0;
+    g_free(path);
   }
 
-  gtk_widget_destroy(dialog);
+  gtk_native_dialog_destroy(GTK_NATIVE_DIALOG(native));
+  g_object_unref(native);
 
   while (gtk_events_pending())
     gtk_main_iteration();
-
-  return true;
 }
 
-#define FileSelectorLoad(x, file, y) load_file(file)
-#define FileSelectorSave(x, file, y) save_file(file)
+#endif
 
-#else // gtk+-2.0
+#else
 
-static char *gtkfilename;
-
-static void selected_file(GtkWidget *button, GtkFileSelection *fs) {
-  strncpy(gtkfilename, gtk_file_selection_get_filename(fs), 255);
-  gtkfilename[255] = 0;
-  gtk_widget_destroy(GTK_WIDGET(fs));
-  gtk_main_quit();
+#ifndef __EMSCRIPTEN__
+static void FileSelectorUnimplemented(FileSelectorHandler) {
+  fprintf(stderr, "ERROR: file selector is not implemented in this build.\n");
 }
 
-static bool select_file(char *buf) {
-  gtkfilename = buf;
-  GtkWidget *dialog = gtk_file_selection_new("Let's file selection time, for enjoy!");
-  g_signal_connect(G_OBJECT(dialog), "destroy", G_CALLBACK(gtk_main_quit), nullptr);
-  g_signal_connect(G_OBJECT(GTK_FILE_SELECTION(dialog)->ok_button), "clicked", G_CALLBACK(selected_file), G_OBJECT(dialog));
-  g_signal_connect_swapped(G_OBJECT(GTK_FILE_SELECTION(dialog)->cancel_button), "clicked", G_CALLBACK(gtk_widget_destroy), G_OBJECT(dialog));
-  gtk_widget_show(GTK_WIDGET(dialog));
-  gtk_main();
-  return *gtkfilename;
-}
-
-#define FileSelectorLoad(x, file, y) select_file(file)
-#define FileSelectorSave(x, file, y) select_file(file)
+#define FileSelectorLoad FileSelectorUnimplemented
+#define FileSelectorSave FileSelectorUnimplemented
+#endif
 
 #endif
 
 static void sdlquit() {
   ddkFree();
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+  if (sdltexture != nullptr) {
+    SDL_DestroyTexture(sdltexture);
+  }
+  if (sdlrenderer != nullptr) {
+    SDL_DestroyRenderer(sdlrenderer);
+  }
+  if (sdlwindow != nullptr) {
+    SDL_DestroyWindow(sdlwindow);
+  }
+#endif
   SDL_Quit();
 }
 
 static void sdlinit() {
-  SDL_Surface *icon;
   VERIFY(!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO));
+#ifndef __EMSCRIPTEN__
+  SDL_Surface *icon;
   icon = SDL_LoadBMP("/usr/share/sfxr/sfxr.bmp");
   if (!icon)
     icon = SDL_LoadBMP("sfxr.bmp");
   if (icon)
+#if SDL_VERSION_ATLEAST(2, 0, 0)
+    SDL_SetWindowIcon(sdlwindow, icon);
+#else
     SDL_WM_SetIcon(icon, nullptr);
+#endif
+#endif
   atexit(sdlquit);
-  memset(keys, 0, sizeof(keys));
+  keys.clear();
   ddkInit();
 }
 
-static void loop(void) {
-  SDL_Event e;
-  while (true) {
-    if (SDL_PollEvent(&e)) {
-      switch (e.type) {
-      case SDL_QUIT:
-        return;
-
-      case SDL_KEYDOWN:
-        keys[e.key.keysym.sym] = true;
-
-      default:
-        break;
-      }
+static void loop() {
+  SDL_Event event;
+  while (SDL_PollEvent(&event)) {
+    switch (event.type) {
+    case SDL_QUIT:
+      exit(0);
+    case SDL_KEYDOWN:
+      keys.insert(event.key.keysym.sym);
+      break;
+    default:
+      break;
     }
-
-    sdlupdate();
-
-    if (!ddkCalcFrame())
-      return;
-
-    SDL_Flip(sdlscreen);
   }
+
+  sdlupdate();
+
+  if (!ddkCalcFrame())
+    return;
+
+  sdlflip();
 }
 
-int main(int argc, char *argv[]) {
-  gtk_init(&argc, &argv);
+int main() {
+#ifdef HAVE_GTK
+#if GTK_CHECK_VERSION(4, 0, 0)
+  gtk_init();
+#else
+  gtk_init(nullptr, nullptr);
+#endif
+#endif
+
   sdlinit();
-  loop();
+
+#ifdef __EMSCRIPTEN__
+  emscripten_set_main_loop(loop, 0, true);
+#else
+  while (true)
+    loop();
+#endif
+
   return 0;
 }
 

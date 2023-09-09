@@ -20,7 +20,14 @@
 #include "fileselector.h" // WIN32
 #include "pa/portaudio.h"
 #else
-#include "SDL.h"
+#include <SDL.h>
+#endif
+#ifdef __EMSCRIPTEN__
+#include "emfileutils.h"
+#endif
+
+#ifndef DATADIR
+#define DATADIR "/usr/local/share"
 #endif
 
 #define rnd(n) (rand() % (n + 1))
@@ -165,105 +172,180 @@ void ResetParams() {
   p_arp_mod = 0.0f;
 }
 
-bool LoadSettings(char *filename) {
+bool LoadSettings(FILE *file) {
+  int version = 0;
+  if (fread(&version, 1, sizeof(int), file) != sizeof(int))
+    return false;
+  if (version != 100 && version != 101 && version != 102)
+    return false;
+
+  if (fread(&wave_type, 1, sizeof(int), file) != sizeof(int))
+    return false;
+
+  sound_vol = 0.5f;
+  if (version == 102)
+    if (fread(&sound_vol, 1, sizeof(float), file) != sizeof(float))
+      return false;
+
+  if (fread(&p_base_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_freq_limit, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_freq_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (version >= 101)
+    if (fread(&p_freq_dramp, 1, sizeof(float), file) != sizeof(float))
+      return false;
+  if (fread(&p_duty, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_duty_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fread(&p_vib_strength, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_vib_speed, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_vib_delay, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fread(&p_env_attack, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_env_sustain, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_env_decay, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_env_punch, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fread(&filter_on, 1, sizeof(bool), file) != sizeof(bool))
+    return false;
+  if (fread(&p_lpf_resonance, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_lpf_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_lpf_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_hpf_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_hpf_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fread(&p_pha_offset, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fread(&p_pha_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fread(&p_repeat_speed, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (version >= 101) {
+    if (fread(&p_arp_speed, 1, sizeof(float), file) != sizeof(float))
+      return false;
+    if (fread(&p_arp_mod, 1, sizeof(float), file) != sizeof(float))
+      return false;
+  }
+
+  return true;
+}
+
+bool LoadSettings(const char *filename) {
   FILE *file = fopen(filename, "rb");
   if (!file)
     return false;
 
-  int version = 0;
-  fread(&version, 1, sizeof(int), file);
-  if (version != 100 && version != 101 && version != 102)
+  bool success = LoadSettings(file);
+
+  if (fclose(file) != 0)
     return false;
 
-  fread(&wave_type, 1, sizeof(int), file);
+  return success;
+}
 
-  sound_vol = 0.5f;
-  if (version == 102)
-    fread(&sound_vol, 1, sizeof(float), file);
+bool SaveSettings(FILE *file, off_t *eobp) {
+  int version = 102;
+  if (fwrite(&version, 1, sizeof(int), file) != sizeof(int))
+    return false;
 
-  fread(&p_base_freq, 1, sizeof(float), file);
-  fread(&p_freq_limit, 1, sizeof(float), file);
-  fread(&p_freq_ramp, 1, sizeof(float), file);
-  if (version >= 101)
-    fread(&p_freq_dramp, 1, sizeof(float), file);
-  fread(&p_duty, 1, sizeof(float), file);
-  fread(&p_duty_ramp, 1, sizeof(float), file);
+  if (fwrite(&wave_type, 1, sizeof(int), file) != sizeof(int))
+    return false;
 
-  fread(&p_vib_strength, 1, sizeof(float), file);
-  fread(&p_vib_speed, 1, sizeof(float), file);
-  fread(&p_vib_delay, 1, sizeof(float), file);
+  if (fwrite(&sound_vol, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  fread(&p_env_attack, 1, sizeof(float), file);
-  fread(&p_env_sustain, 1, sizeof(float), file);
-  fread(&p_env_decay, 1, sizeof(float), file);
-  fread(&p_env_punch, 1, sizeof(float), file);
+  if (fwrite(&p_base_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_freq_limit, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_freq_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_freq_dramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_duty, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_duty_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  fread(&filter_on, 1, sizeof(bool), file);
-  fread(&p_lpf_resonance, 1, sizeof(float), file);
-  fread(&p_lpf_freq, 1, sizeof(float), file);
-  fread(&p_lpf_ramp, 1, sizeof(float), file);
-  fread(&p_hpf_freq, 1, sizeof(float), file);
-  fread(&p_hpf_ramp, 1, sizeof(float), file);
+  if (fwrite(&p_vib_strength, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_vib_speed, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_vib_delay, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  fread(&p_pha_offset, 1, sizeof(float), file);
-  fread(&p_pha_ramp, 1, sizeof(float), file);
+  if (fwrite(&p_env_attack, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_env_sustain, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_env_decay, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_env_punch, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  fread(&p_repeat_speed, 1, sizeof(float), file);
+  if (fwrite(&filter_on, 1, sizeof(bool), file) != sizeof(bool))
+    return false;
+  if (fwrite(&p_lpf_resonance, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_lpf_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_lpf_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_hpf_freq, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_hpf_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  if (version >= 101) {
-    fread(&p_arp_speed, 1, sizeof(float), file);
-    fread(&p_arp_mod, 1, sizeof(float), file);
-  }
+  if (fwrite(&p_pha_offset, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_pha_ramp, 1, sizeof(float), file) != sizeof(float))
+    return false;
 
-  fclose(file);
+  if (fwrite(&p_repeat_speed, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fwrite(&p_arp_speed, 1, sizeof(float), file) != sizeof(float))
+    return false;
+  if (fwrite(&p_arp_mod, 1, sizeof(float), file) != sizeof(float))
+    return false;
+
+  if (fflush(file) != 0)
+    return false;
+  if (eobp && (*eobp = ftello(file)) == -1)
+    return false;
+
   return true;
 }
 
-bool SaveSettings(char *filename) {
+bool SaveSettings(const char *filename) {
   FILE *file = fopen(filename, "wb");
   if (!file)
     return false;
 
-  int version = 102;
-  fwrite(&version, 1, sizeof(int), file);
+  bool success = SaveSettings(file, nullptr);
 
-  fwrite(&wave_type, 1, sizeof(int), file);
+  if (fclose(file) != 0)
+    return false;
 
-  fwrite(&sound_vol, 1, sizeof(float), file);
-
-  fwrite(&p_base_freq, 1, sizeof(float), file);
-  fwrite(&p_freq_limit, 1, sizeof(float), file);
-  fwrite(&p_freq_ramp, 1, sizeof(float), file);
-  fwrite(&p_freq_dramp, 1, sizeof(float), file);
-  fwrite(&p_duty, 1, sizeof(float), file);
-  fwrite(&p_duty_ramp, 1, sizeof(float), file);
-
-  fwrite(&p_vib_strength, 1, sizeof(float), file);
-  fwrite(&p_vib_speed, 1, sizeof(float), file);
-  fwrite(&p_vib_delay, 1, sizeof(float), file);
-
-  fwrite(&p_env_attack, 1, sizeof(float), file);
-  fwrite(&p_env_sustain, 1, sizeof(float), file);
-  fwrite(&p_env_decay, 1, sizeof(float), file);
-  fwrite(&p_env_punch, 1, sizeof(float), file);
-
-  fwrite(&filter_on, 1, sizeof(bool), file);
-  fwrite(&p_lpf_resonance, 1, sizeof(float), file);
-  fwrite(&p_lpf_freq, 1, sizeof(float), file);
-  fwrite(&p_lpf_ramp, 1, sizeof(float), file);
-  fwrite(&p_hpf_freq, 1, sizeof(float), file);
-  fwrite(&p_hpf_ramp, 1, sizeof(float), file);
-
-  fwrite(&p_pha_offset, 1, sizeof(float), file);
-  fwrite(&p_pha_ramp, 1, sizeof(float), file);
-
-  fwrite(&p_repeat_speed, 1, sizeof(float), file);
-
-  fwrite(&p_arp_speed, 1, sizeof(float), file);
-  fwrite(&p_arp_mod, 1, sizeof(float), file);
-
-  fclose(file);
-  return true;
+  return success;
 }
 
 void ResetSample(bool restart) {
@@ -334,7 +416,7 @@ void PlaySample() {
   playing_sample = true;
 }
 
-void SynthSample(int length, float *buffer, FILE *file) {
+bool SynthSample(int length, float *buffer, FILE *file) {
   for (int i = 0; i < length; i++) {
     if (!playing_sample)
       break;
@@ -482,16 +564,19 @@ void SynthSample(int length, float *buffer, FILE *file) {
         fileacc = 0;
         if (wav_bits == 16) {
           short isample = (short)(filesample * 32000);
-          fwrite(&isample, 1, 2, file);
+          if (fwrite(&isample, 1, 2, file) != 2)
+            return false;
         } else {
           unsigned char isample = (unsigned char)(filesample * 127 + 128);
-          fwrite(&isample, 1, 1, file);
+          if (fwrite(&isample, 1, 1, file) != 1)
+            return false;
         }
         filesample = 0.0f;
       }
       file_sampleswritten++;
     }
   }
+  return true;
 }
 
 DPInput *input;
@@ -519,7 +604,7 @@ static int AudioCallback(void *inputBuffer, void *outputBuffer,
 }
 #else
 // lets use SDL instead
-static void SDLAudioCallback(void *userdata, Uint8 *stream, int len) {
+static void SDLAudioCallback(void * /* userdata */, Uint8 *stream, int len) {
   if (playing_sample && !mute_stream) {
     unsigned int l = len / 2;
     float fbuf[l];
@@ -538,39 +623,50 @@ static void SDLAudioCallback(void *userdata, Uint8 *stream, int len) {
 }
 #endif
 
-bool ExportWAV(char *filename) {
-  FILE *foutput = fopen(filename, "wb");
-  if (!foutput)
-    return false;
+bool ExportWAV(FILE *foutput, off_t *eobp) {
   // write wav header
-  char string[32];
   unsigned int dword = 0;
   unsigned short word = 0;
-  fwrite("RIFF", 4, 1, foutput); // "RIFF"
+  if (fwrite("RIFF", 4, 1, foutput) != 1) // "RIFF"
+    return false;
   dword = 0;
-  fwrite(&dword, 1, 4, foutput); // remaining file size
-  fwrite("WAVE", 4, 1, foutput); // "WAVE"
+  if (fwrite(&dword, 1, 4, foutput) != 4) // remaining file size
+    return false;
+  if (fwrite("WAVE", 4, 1, foutput) != 1) // "WAVE"
+    return false;
 
-  fwrite("fmt ", 4, 1, foutput); // "fmt "
+  if (fwrite("fmt ", 4, 1, foutput) != 1) // "fmt "
+    return false;
   dword = 16;
-  fwrite(&dword, 1, 4, foutput); // chunk size
+  if (fwrite(&dword, 1, 4, foutput) != 4) // chunk size
+    return false;
   word = 1;
-  fwrite(&word, 1, 2, foutput); // compression code
+  if (fwrite(&word, 1, 2, foutput) != 2) // compression code
+    return false;
   word = 1;
-  fwrite(&word, 1, 2, foutput); // channels
+  if (fwrite(&word, 1, 2, foutput) != 2) // channels
+    return false;
   dword = wav_freq;
-  fwrite(&dword, 1, 4, foutput); // sample rate
+  if (fwrite(&dword, 1, 4, foutput) != 4) // sample rate
+    return false;
   dword = wav_freq * wav_bits / 8;
-  fwrite(&dword, 1, 4, foutput); // bytes/sec
+  if (fwrite(&dword, 1, 4, foutput) != 4) // bytes/sec
+    return false;
   word = wav_bits / 8;
-  fwrite(&word, 1, 2, foutput); // block align
+  if (fwrite(&word, 1, 2, foutput) != 2) // block align
+    return false;
   word = wav_bits;
-  fwrite(&word, 1, 2, foutput); // bits per sample
+  if (fwrite(&word, 1, 2, foutput) != 2) // bits per sample
+    return false;
 
-  fwrite("data", 4, 1, foutput); // "data"
+  if (fwrite("data", 4, 1, foutput) != 1) // "data"
+    return false;
   dword = 0;
   int foutstream_datasize = ftell(foutput);
-  fwrite(&dword, 1, 4, foutput); // chunk size
+  if (foutstream_datasize == -1)
+    return false;
+  if (fwrite(&dword, 1, 4, foutput) != 4) // chunk size
+    return false;
 
   // write sample data
   mute_stream = true;
@@ -579,20 +675,45 @@ bool ExportWAV(char *filename) {
   fileacc = 0;
   PlaySample();
   while (playing_sample)
-    SynthSample(256, nullptr, foutput);
+    if (!SynthSample(256, nullptr, foutput))
+      return false;
   mute_stream = false;
 
+  if (fflush(foutput) != 0)
+    return false;
+  if (eobp && (*eobp = ftello(foutput)) == -1)
+    return false;
+
   // seek back to header and write size info
-  fseek(foutput, 4, SEEK_SET);
+  if (fseek(foutput, 4, SEEK_SET) != 0)
+    return false;
   dword = 0;
   dword = foutstream_datasize - 4 + file_sampleswritten * wav_bits / 8;
-  fwrite(&dword, 1, 4, foutput); // remaining file size
-  fseek(foutput, foutstream_datasize, SEEK_SET);
+  if (fwrite(&dword, 1, 4, foutput) != 4) // remaining file size
+    return false;
+  if (fseek(foutput, foutstream_datasize, SEEK_SET) != 0)
+    return false;
   dword = file_sampleswritten * wav_bits / 8;
-  fwrite(&dword, 1, 4, foutput); // chunk size (data)
-  fclose(foutput);
+  if (fwrite(&dword, 1, 4, foutput) != 4) // chunk size (data)
+    return false;
+
+  if (fflush(foutput) != 0)
+    return false;
 
   return true;
+}
+
+bool ExportWAV(const char *filename) {
+  FILE *foutput = fopen(filename, "wb");
+  if (!foutput)
+    return false;
+
+  bool success = ExportWAV(foutput, nullptr);
+
+  if (fclose(foutput) != 0)
+    return false;
+
+  return success;
 }
 
 #include "tools.h"
@@ -600,12 +721,21 @@ bool ExportWAV(char *filename) {
 bool firstframe = true;
 int refresh_counter = 0;
 
-void Slider(int x, int y, float &value, bool bipolar, const char *text) {
+bool Slider(int x, int y, float &value, bool bipolar, const char *text) {
+  bool result = false;
   if (MouseInBox(x, y, 100, 10)) {
-    if (mouse_leftclick)
+    if (mouse_leftclick) {
+      if (bipolar)
+        value = (mouse_x - x) / 50.0f - 1.0f;
+      else
+        value = (mouse_x - x) / 100.0f;
       vselected = &value;
-    if (mouse_rightclick)
+      result = true;
+    }
+    if (mouse_rightclick) {
       value = 0.0f;
+      result = true;
+    }
   }
   float mv = (float)(mouse_x - mouse_px);
   if (vselected != &value)
@@ -623,40 +753,41 @@ void Slider(int x, int y, float &value, bool bipolar, const char *text) {
     if (value > 1.0f)
       value = 1.0f;
   }
-  DrawBar(x - 1, y, 102, 10, 0x000000);
+  DrawBar(x - 1, y, 102, 10, RGBA(0x00, 0x00, 0x00, 0x00));
   int ival = (int)(value * 99);
   if (bipolar)
     ival = (int)(value * 49.5f + 49.5f);
-  DrawBar(x, y + 1, ival, 8, 0xF0C090);
-  DrawBar(x + ival, y + 1, 100 - ival, 8, 0x807060);
-  DrawBar(x + ival, y + 1, 1, 8, 0xFFFFFF);
+  DrawBar(x, y + 1, ival, 8, RGBA(0xF0, 0xC0, 0x90, 0x00));
+  DrawBar(x + ival, y + 1, 100 - ival, 8, RGBA(0x80, 0x70, 0x60, 0x00));
+  DrawBar(x + ival, y + 1, 1, 8, RGBA(0xFF, 0xFF, 0xFF, 0x00));
   if (bipolar) {
-    DrawBar(x + 50, y - 1, 1, 3, 0x000000);
-    DrawBar(x + 50, y + 8, 1, 3, 0x000000);
+    DrawBar(x + 50, y - 1, 1, 3, RGBA(0x00, 0x00, 0x00, 0x00));
+    DrawBar(x + 50, y + 8, 1, 3, RGBA(0x00, 0x00, 0x00, 0x00));
   }
-  DWORD tcol = 0x000000;
+  DWORD tcol = RGBA(0x00, 0x00, 0x00, 0x00);
   if (wave_type != 0 && (&value == &p_duty || &value == &p_duty_ramp))
-    tcol = 0x808080;
+    tcol = RGBA(0x80, 0x80, 0x80, 0x00);
   DrawText(x - 4 - strlen(text) * 8, y + 1, tcol, text);
+  return result;
 }
 
 bool Button(int x, int y, bool highlight, const char *text, int id) {
-  DWORD color1 = 0x000000;
-  DWORD color2 = 0xA09088;
-  DWORD color3 = 0x000000;
+  DWORD color1 = RGBA(0x00, 0x00, 0x00, 0x00);
+  DWORD color2 = RGBA(0xA0, 0x90, 0x88, 0x00);
+  DWORD color3 = RGBA(0x00, 0x00, 0x00, 0x00);
   bool hover = MouseInBox(x, y, 100, 17);
   if (hover && mouse_leftclick)
     vcurbutton = id;
   bool current = (vcurbutton == id);
   if (highlight) {
-    color1 = 0x000000;
-    color2 = 0x988070;
-    color3 = 0xFFF0E0;
+    color1 = RGBA(0x00, 0x00, 0x00, 0x00);
+    color2 = RGBA(0x98, 0x80, 0x70, 0x00);
+    color3 = RGBA(0xFF, 0xF0, 0xE0, 0x00);
   }
   if (current && hover) {
-    color1 = 0xA09088;
-    color2 = 0xFFF0E0;
-    color3 = 0xA09088;
+    color1 = RGBA(0xA0, 0x90, 0x88, 0x00);
+    color2 = RGBA(0xFF, 0xF0, 0xE0, 0x00);
+    color3 = RGBA(0xA0, 0x90, 0x88, 0x00);
   }
   DrawBar(x - 1, y - 1, 102, 19, color1);
   DrawBar(x, y, 100, 17, color2);
@@ -699,9 +830,11 @@ void DrawScreen() {
 
   ddkLock();
 
-  ClearScreen(0xC0B090);
+  ClearScreen(RGBA(0xC0, 0xB0, 0x90, 0x00));
 
-  DrawText(10, 10, 0x504030, "GENERATOR");
+  bool do_play = false;
+
+  DrawText(10, 10, RGBA(0x50, 0x40, 0x30, 0x00), "GENERATOR");
   for (int i = 0; i < 7; i++) {
     if (Button(5, 35 + i * 30, false, categories[i].name, 300 + i)) {
       switch (i) {
@@ -849,25 +982,31 @@ void DrawScreen() {
         break;
       }
 
-      PlaySample();
+      do_play = true;
     }
   }
-  DrawBar(110, 0, 2, 480, 0x000000);
-  DrawText(120, 10, 0x504030, "MANUAL SETTINGS");
-  DrawSprite(ld48, 8, 440, 0, 0xB0A080);
+  DrawBar(110, 0, 2, 480, RGBA(0x00, 0x00, 0x00, 0x00));
+  DrawText(120, 10, RGBA(0x50, 0x40, 0x30, 0x00), "MANUAL SETTINGS");
+  DrawSprite(ld48, 8, 440, 0, RGBA(0xB0, 0xA0, 0x80, 0x00));
 
-  if (Button(130, 30, wave_type == 0, "SQUAREWAVE", 10))
+  if (Button(130, 30, wave_type == 0, "SQUAREWAVE", 10)) {
     wave_type = 0;
-  if (Button(250, 30, wave_type == 1, "SAWTOOTH", 11))
+    do_play = true;
+  }
+  if (Button(250, 30, wave_type == 1, "SAWTOOTH", 11)) {
     wave_type = 1;
-  if (Button(370, 30, wave_type == 2, "SINEWAVE", 12))
+    do_play = true;
+  }
+  if (Button(370, 30, wave_type == 2, "SINEWAVE", 12)) {
     wave_type = 2;
-  if (Button(490, 30, wave_type == 3, "NOISE", 13))
+    do_play = true;
+  }
+  if (Button(490, 30, wave_type == 3, "NOISE", 13)) {
     wave_type = 3;
+    do_play = true;
+  }
 
-  bool do_play = false;
-
-  DrawBar(5 - 1 - 1, 412 - 1 - 1, 102 + 2, 19 + 2, 0x000000);
+  DrawBar(5 - 1 - 1, 412 - 1 - 1, 102 + 2, 19 + 2, RGBA(0x00, 0x00, 0x00, 0x00));
   if (Button(5, 412, false, "RANDOMIZE", 40)) {
     p_base_freq = pow(frnd(2.0f) - 1.0f, 2.0f);
     if (rnd(1))
@@ -957,35 +1096,70 @@ void DrawScreen() {
     do_play = true;
   }
 
-  DrawText(515, 170, 0x000000, "VOLUME");
-  DrawBar(490 - 1 - 1 + 60, 180 - 1 + 5, 70, 2, 0x000000);
-  DrawBar(490 - 1 - 1 + 60 + 68, 180 - 1 + 5, 2, 205, 0x000000);
-  DrawBar(490 - 1 - 1 + 60, 180 - 1, 42 + 2, 10 + 2, 0xFF0000);
-  Slider(490, 180, sound_vol, false, " ");
+  DrawText(515, 170, RGBA(0x00, 0x00, 0x00, 0x00), "VOLUME");
+  DrawBar(490 - 1 - 1 + 60, 180 - 1 + 5, 70, 2, RGBA(0x00, 0x00, 0x00, 0x00));
+  DrawBar(490 - 1 - 1 + 60 + 68, 180 - 1 + 5, 2, 205, RGBA(0x00, 0x00, 0x00, 0x00));
+  DrawBar(490 - 1 - 1 + 60, 180 - 1, 42 + 2, 10 + 2, RGBA(0xFF, 0x00, 0x00, 0x00));
+  if (Slider(490, 180, sound_vol, false, " "))
+    do_play = true;
   if (Button(490, 200, false, "PLAY SOUND", 20))
-    PlaySample();
+    do_play = true;
 
   if (Button(490, 290, false, "LOAD SOUND", 14)) {
-    char filename[256];
-    if (FileSelectorLoad(hWndMain, filename, 1)) // WIN32
-    {
+#ifdef __EMSCRIPTEN__
+    emfileutils::upload(".sfxr", [](const char *, const char *, const void *data, size_t size) {
       ResetParams();
-      LoadSettings(filename);
-      PlaySample();
-    }
+      FILE *file = fmemopen((char *)data, size, "rb");
+      if (LoadSettings(file))
+        PlaySample();
+      else
+        ResetParams();
+      fclose(file);
+    });
+#else
+    FileSelectorLoad([](const char *path) {
+      ResetParams();
+      if (LoadSettings(path))
+        PlaySample();
+      else
+        ResetParams();
+    });
+#endif
   }
   if (Button(490, 320, false, "SAVE SOUND", 15)) {
-    char filename[256];
-    if (FileSelectorSave(hWndMain, filename, 1)) // WIN32
-      SaveSettings(filename);
+#ifdef __EMSCRIPTEN__
+    char *buf;
+    size_t len;
+    off_t eob;
+    FILE *file = open_memstream(&buf, &len);
+    if (SaveSettings(file, &eob))
+      emfileutils::download("sample.sfxr", "application/octet-stream", buf, eob);
+    fclose(file);
+    free(buf);
+#else
+    FileSelectorSave([](const char *path) {
+      SaveSettings(path);
+    });
+#endif
   }
 
-  DrawBar(490 - 1 - 1 + 60, 380 - 1 + 9, 70, 2, 0x000000);
-  DrawBar(490 - 1 - 2, 380 - 1 - 2, 102 + 4, 19 + 4, 0x000000);
+  DrawBar(490 - 1 - 1 + 60, 380 - 1 + 9, 70, 2, RGBA(0x00, 0x00, 0x00, 0x00));
+  DrawBar(490 - 1 - 2, 380 - 1 - 2, 102 + 4, 19 + 4, RGBA(0x00, 0x00, 0x00, 0x00));
   if (Button(490, 380, false, "EXPORT .WAV", 16)) {
-    char filename[256];
-    if (FileSelectorSave(hWndMain, filename, 0)) // WIN32
-      ExportWAV(filename);
+#ifdef __EMSCRIPTEN__
+    char *buf;
+    size_t len;
+    off_t eob;
+    FILE *file = open_memstream(&buf, &len);
+    if (ExportWAV(file, &eob))
+      emfileutils::download("sample.wav", "audio/wav", buf, eob);
+    fclose(file);
+    free(buf);
+#else
+    FileSelectorSave([](const char *path) {
+      ExportWAV(path);
+    });
+#endif
   }
   char str[10];
   sprintf(str, "%i HZ", wav_freq);
@@ -994,6 +1168,7 @@ void DrawScreen() {
       wav_freq = 22050;
     else
       wav_freq = 44100;
+    do_play = true;
   }
   sprintf(str, "%i-BIT", wav_bits);
   if (Button(490, 440, false, str, 19)) {
@@ -1001,60 +1176,83 @@ void DrawScreen() {
       wav_bits = 8;
     else
       wav_bits = 16;
+    do_play = true;
   }
 
   int ypos = 4;
 
   int xpos = 350;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_env_attack, false, "ATTACK TIME");
-  Slider(xpos, (ypos++) * 18, p_env_sustain, false, "SUSTAIN TIME");
-  Slider(xpos, (ypos++) * 18, p_env_punch, false, "SUSTAIN PUNCH");
-  Slider(xpos, (ypos++) * 18, p_env_decay, false, "DECAY TIME");
+  if (Slider(xpos, (ypos++) * 18, p_env_attack, false, "ATTACK TIME"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_env_sustain, false, "SUSTAIN TIME"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_env_punch, false, "SUSTAIN PUNCH"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_env_decay, false, "DECAY TIME"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_base_freq, false, "START FREQUENCY");
-  Slider(xpos, (ypos++) * 18, p_freq_limit, false, "MIN FREQUENCY");
-  Slider(xpos, (ypos++) * 18, p_freq_ramp, true, "SLIDE");
-  Slider(xpos, (ypos++) * 18, p_freq_dramp, true, "DELTA SLIDE");
+  if (Slider(xpos, (ypos++) * 18, p_base_freq, false, "START FREQUENCY"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_freq_limit, false, "MIN FREQUENCY"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_freq_ramp, true, "SLIDE"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_freq_dramp, true, "DELTA SLIDE"))
+    do_play = true;
 
-  Slider(xpos, (ypos++) * 18, p_vib_strength, false, "VIBRATO DEPTH");
-  Slider(xpos, (ypos++) * 18, p_vib_speed, false, "VIBRATO SPEED");
+  if (Slider(xpos, (ypos++) * 18, p_vib_strength, false, "VIBRATO DEPTH"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_vib_speed, false, "VIBRATO SPEED"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_arp_mod, true, "CHANGE AMOUNT");
-  Slider(xpos, (ypos++) * 18, p_arp_speed, false, "CHANGE SPEED");
+  if (Slider(xpos, (ypos++) * 18, p_arp_mod, true, "CHANGE AMOUNT"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_arp_speed, false, "CHANGE SPEED"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_duty, false, "SQUARE DUTY");
-  Slider(xpos, (ypos++) * 18, p_duty_ramp, true, "DUTY SWEEP");
+  if (Slider(xpos, (ypos++) * 18, p_duty, false, "SQUARE DUTY"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_duty_ramp, true, "DUTY SWEEP"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_repeat_speed, false, "REPEAT SPEED");
+  if (Slider(xpos, (ypos++) * 18, p_repeat_speed, false, "REPEAT SPEED"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_pha_offset, true, "PHASER OFFSET");
-  Slider(xpos, (ypos++) * 18, p_pha_ramp, true, "PHASER SWEEP");
+  if (Slider(xpos, (ypos++) * 18, p_pha_offset, true, "PHASER OFFSET"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_pha_ramp, true, "PHASER SWEEP"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  Slider(xpos, (ypos++) * 18, p_lpf_freq, false, "LP FILTER CUTOFF");
-  Slider(xpos, (ypos++) * 18, p_lpf_ramp, true, "LP FILTER CUTOFF SWEEP");
-  Slider(xpos, (ypos++) * 18, p_lpf_resonance, false, "LP FILTER RESONANCE");
-  Slider(xpos, (ypos++) * 18, p_hpf_freq, false, "HP FILTER CUTOFF");
-  Slider(xpos, (ypos++) * 18, p_hpf_ramp, true, "HP FILTER CUTOFF SWEEP");
+  if (Slider(xpos, (ypos++) * 18, p_lpf_freq, false, "LP FILTER CUTOFF"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_lpf_ramp, true, "LP FILTER CUTOFF SWEEP"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_lpf_resonance, false, "LP FILTER RESONANCE"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_hpf_freq, false, "HP FILTER CUTOFF"))
+    do_play = true;
+  if (Slider(xpos, (ypos++) * 18, p_hpf_ramp, true, "HP FILTER CUTOFF SWEEP"))
+    do_play = true;
 
-  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, 0x0000000);
+  DrawBar(xpos - 190, ypos * 18 - 5, 300, 2, RGBA(0x00, 0x00, 0x00, 0x00));
 
-  DrawBar(xpos - 190, 4 * 18 - 5, 1, (ypos - 4) * 18, 0x0000000);
-  DrawBar(xpos - 190 + 299, 4 * 18 - 5, 1, (ypos - 4) * 18, 0x0000000);
+  DrawBar(xpos - 190, 4 * 18 - 5, 1, (ypos - 4) * 18, RGBA(0x00, 0x00, 0x00, 0x00));
+  DrawBar(xpos - 190 + 299, 4 * 18 - 5, 1, (ypos - 4) * 18, RGBA(0x00, 0x00, 0x00, 0x00));
 
   if (do_play)
     PlaySample();
@@ -1081,7 +1279,10 @@ bool ddkCalcFrame() {
 
   DrawScreen();
 
+#ifndef __EMSCRIPTEN__
   Sleep(5); // WIN32
+#endif
+
   return true;
 }
 
@@ -1090,18 +1291,18 @@ void ddkInit() {
 
   ddkSetMode(640, 480, 32, 60, DDK_WINDOW, "sfxr"); // requests window size etc from ddrawkit
 
-  if (LoadTGA(font, "/usr/share/sfxr/font.tga")) {
+  if (LoadTGA(font, DATADIR "/sfxr/font.tga")) {
     /* Try again in cwd */
     if (LoadTGA(font, "font.tga")) {
-      fprintf(stderr, "Error could not open /usr/share/sfxr/font.tga nor font.tga\n");
+      fprintf(stderr, "Error could not open " DATADIR "/sfxr/font.tga nor font.tga\n");
       exit(1);
     }
   }
 
-  if (LoadTGA(ld48, "/usr/share/sfxr/ld48.tga")) {
+  if (LoadTGA(ld48, DATADIR "/sfxr/ld48.tga")) {
     /* Try again in cwd */
     if (LoadTGA(ld48, "ld48.tga")) {
-      fprintf(stderr, "Error could not open /usr/share/sfxr/ld48.tga nor ld48.tga\n");
+      fprintf(stderr, "Error could not open " DATADIR "/sfxr/ld48.tga nor ld48.tga\n");
       exit(1);
     }
   }

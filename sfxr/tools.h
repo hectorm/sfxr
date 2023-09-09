@@ -1,34 +1,48 @@
+#ifndef TOOLS_H
+#define TOOLS_H
+
 int LoadTGA(Spriteset &tiles, const char *filename) {
   FILE *file;
   unsigned char byte, crap[16], id_length;
-  int n, width, height, channels, x, y;
+  int n, width, height, /* channels, */ x, y;
   file = fopen(filename, "rb");
   if (!file)
     return -1;
-  fread(&id_length, 1, 1, file);
-  fread(crap, 1, 11, file);
+  if (fread(&id_length, 1, 1, file) != 1)
+    return -1;
+  if (fread(crap, 1, 11, file) != 11)
+    return -1;
   width = 0;
   height = 0;
-  fread(&width, 1, 2, file);  // width
-  fread(&height, 1, 2, file); // height
-  fread(&byte, 1, 1, file);   // bits
-  channels = byte / 8;
-  fread(&byte, 1, 1, file); // image descriptor byte (per-bit info)
+  if (fread(&width, 1, 2, file) != 2) // width
+    return -1;
+  if (fread(&height, 1, 2, file) != 2) // height
+    return -1;
+  if (fread(&byte, 1, 1, file) != 1) // bits
+    return -1;
+  // channels = byte / 8;
+  if (fread(&byte, 1, 1, file) != 1) // image descriptor byte (per-bit info)
+    return -1;
   for (n = 0; n < id_length; n++)
-    fread(&byte, 1, 1, file); // image description
+    if (fread(&byte, 1, 1, file) != 1) // image description
+      return -1;
   tiles.data = (DWORD *)malloc(width * height * sizeof(DWORD));
   for (y = height - 1; y >= 0; y--)
     for (x = 0; x < width; x++) {
       DWORD pixel = 0;
-      fread(&byte, 1, 1, file);
+      if (fread(&byte, 1, 1, file) != 1)
+        return -1;
       pixel |= byte;
-      fread(&byte, 1, 1, file);
+      if (fread(&byte, 1, 1, file) != 1)
+        return -1;
       pixel |= byte << 8;
-      fread(&byte, 1, 1, file);
+      if (fread(&byte, 1, 1, file) != 1)
+        return -1;
       pixel |= byte << 16;
       tiles.data[y * width + x] = pixel;
     }
-  fclose(file);
+  if (fclose(file) != 0)
+    return -1;
   tiles.height = height;
   tiles.width = height;
   tiles.pitch = width;
@@ -116,3 +130,5 @@ bool MouseInBox(int x, int y, int w, int h) {
     return true;
   return false;
 }
+
+#endif

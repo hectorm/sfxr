@@ -21,3 +21,10 @@ sfxr-sdl-1.2.1
 --------------
 * Fixed bug, the loop function call in main was commented out by Johan Helsing (bobbaluba@gmail.com)
 * Fixed broken target clean in Makefile
+
+sfxr-sdl-1.3.0
+--------------
+* Added Emscripten support
+* Added SDL2 support
+* Added GTK 4.10 support
+* Removed GTK 2.0 support
