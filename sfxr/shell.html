@@ -4,6 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>sfxr</title>
+    <meta name="description" content="sound effect generator" />
     <link rel="icon" type="image/png" href="./sfxr.png" />
     <style>
       html, body {
@@ -36,8 +37,14 @@
         const canvas = document.getElementById("canvas");
         globalThis.Module = { canvas, doNotCaptureKeyboard: true };
 
+        canvas.addEventListener("contextmenu", (event) => {
+          event.preventDefault();
+        }, { capture: true, passive: false });
+
         for (type of ["wheel", "mousewheel", "DOMMouseScroll"]) {
-          window.addEventListener(type, (event) => event.stopImmediatePropagation(), true);
+          window.addEventListener(type, (event) => {
+            event.stopImmediatePropagation();
+          }, { capture: true, passive: true });
         }
       })();
     </script>

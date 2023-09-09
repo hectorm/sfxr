@@ -28,3 +28,7 @@ sfxr-sdl-1.3.0
 * Added SDL2 support
 * Added GTK 4.10 support
 * Removed GTK 2.0 support
+
+sfxr-sdl-1.3.1
+--------------
+* Disable context menu in Emscripten shell
