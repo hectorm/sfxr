@@ -96,11 +96,13 @@ CXXFLAGS += \
 LDFLAGS += \
 	$(EXTRA_LDFLAGS)
 
+.PHONY: all
 all: $(EXE)
 
 $(EXE): main.cpp sdlkit.h tools.h emfileutils.h
 	$(CXX) $< $(CPPFLAGS) $(CXXFLAGS) $(LDFLAGS) -o $@
 
+.PHONY: install
 install: $(EXE)
 	$(INSTALL) -d '$(DESTDIR)$(BINDIR)'
 	$(INSTALL) -d '$(DESTDIR)$(DATADIR)'/sfxr/
@@ -111,8 +113,10 @@ install: $(EXE)
 	$(INSTALL_DATA) -m644 ./sfxr.png '$(DESTDIR)$(DATADIR)'/icons/hicolor/48x48/apps/
 	$(INSTALL_DESKTOP) --vendor '' --dir '$(DESTDIR)$(DATADIR)'/applications/ ./sfxr.desktop
 
+.PHONY: install-strip
 install-strip:
 	$(MAKE) INSTALL_PROGRAM='$(INSTALL_PROGRAM) -s' install
 
+.PHONY: clean
 clean:
 	rm -f '$(EXE)'
