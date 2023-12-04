@@ -28,14 +28,16 @@ jobs:
     steps:
       - name: 'Checkout'
         uses: 'actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11'
-      - name: 'Install dependencies'
-        run: |
-          sudo apt-get update && sudo apt-get install -y --no-install-recommends libgtk-4-dev libsdl2-dev
       - name: 'Initialize CodeQL'
         uses: 'github/codeql-action/init@cdcdbb579706841c47f7063dda365e292e5cad7a'
         with:
           languages: '${{ matrix.language }}'
-      - name: 'Autobuild'
-        uses: 'github/codeql-action/autobuild@cdcdbb579706841c47f7063dda365e292e5cad7a'
+      - name: 'Install dependencies'
+        run: |
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends libsdl2-dev
+      - name: 'Build'
+        working-directory: './sfxr/'
+        run: |
+          make clean all SFXR_GTK=
       - name: 'Perform CodeQL Analysis'
         uses: 'github/codeql-action/analyze@cdcdbb579706841c47f7063dda365e292e5cad7a'
