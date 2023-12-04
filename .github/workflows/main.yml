@@ -7,7 +7,7 @@ on:
   pull_request:
     branches: ['*']
   schedule:
-    - cron: '20 04 * * 1'
+    - cron: '25 12 * * 3'
   workflow_dispatch:
 
 permissions: {}
