@@ -26,7 +26,7 @@ int LoadTGA(Spriteset &tiles, const char *filename) {
   for (n = 0; n < id_length; n++)
     if (fread(&byte, 1, 1, file) != 1) // image description
       return -1;
-  tiles.data = (DWORD *)malloc(width * height * sizeof(DWORD));
+  tiles.data = (DWORD *)malloc((long) width * height * sizeof(DWORD));
   for (y = height - 1; y >= 0; y--)
     for (x = 0; x < width; x++) {
       DWORD pixel = 0;

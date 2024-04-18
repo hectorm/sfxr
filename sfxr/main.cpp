@@ -607,8 +607,8 @@ static int AudioCallback(void *inputBuffer, void *outputBuffer,
 static void SDLAudioCallback(void * /* userdata */, Uint8 *stream, int len) {
   if (playing_sample && !mute_stream) {
     unsigned int l = len / 2;
-    float fbuf[l];
-    memset(fbuf, 0, sizeof(fbuf));
+    float* fbuf = new float[l];
+    memset(fbuf, 0, sizeof(float) * l);
     SynthSample(l, fbuf, nullptr);
     while (l--) {
       float f = fbuf[l];
@@ -618,6 +618,7 @@ static void SDLAudioCallback(void * /* userdata */, Uint8 *stream, int len) {
         f = 1.0;
       ((Sint16 *)stream)[l] = (Sint16)(f * 32767);
     }
+    delete[] fbuf;
   } else
     memset(stream, 0, len);
 }
