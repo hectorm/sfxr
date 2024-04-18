@@ -28,7 +28,8 @@ CFLAGS ?= \
 	-flto \
 	--closure 1 \
 	-s ENVIRONMENT=web \
-	-s STRICT=1 \
+	-s AUTO_JS_LIBRARIES=0 \
+	-s AUTO_NATIVE_LIBRARIES=0 \
 	-s WASM_BIGINT=1 \
 	-s ALLOW_MEMORY_GROWTH=1 \
 	-s EXPORTED_RUNTIME_METHODS='["ccall"]' \
