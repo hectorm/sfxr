@@ -27,9 +27,9 @@ jobs:
         language: ["cpp", "javascript"]
     steps:
       - name: "Checkout"
-        uses: "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8"
+        uses: "actions/checkout@1af3b93b6815bc44a9784bd300feb67ff0d1eeb3"
       - name: "Initialize CodeQL"
-        uses: "github/codeql-action/init@f443b600d91635bebf5b0d9ebc620189c0d6fba5"
+        uses: "github/codeql-action/init@fdbfb4d2750291e159f0156def62b853c2798ca2"
         with:
           languages: "${{ matrix.language }}"
       - name: "Install dependencies"
@@ -40,4 +40,4 @@ jobs:
         run: |
           make clean all SFXR_GTK=
       - name: "Perform CodeQL Analysis"
-        uses: "github/codeql-action/analyze@f443b600d91635bebf5b0d9ebc620189c0d6fba5"
+        uses: "github/codeql-action/analyze@fdbfb4d2750291e159f0156def62b853c2798ca2"
